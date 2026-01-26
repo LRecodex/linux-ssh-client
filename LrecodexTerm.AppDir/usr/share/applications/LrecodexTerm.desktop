@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=LrecodexTerm
+Comment=SSH + SFTP client
+Exec=LrecodexTerm
+Icon=LrecodexTerm
+Terminal=false
+Categories=Network;Utility;

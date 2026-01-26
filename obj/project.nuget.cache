@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "gkWTNczrSsnZTDLzU2Hxa8oVLVDG2my7yBlwA/Ci3gUNq3udybZocgMD/qiaqLvDfpPXY6fhkwou3X5vFNra3Q==",
+  "dgSpecHash": "Xu240QXXt2waAVteNLClZ0rqk63OXb69tDSyZpzNHDKdGgNTCW5nOHZ0LaXv3oIaF1ZcSz+C4djzyVErBCfL2Q==",
   "success": true,
   "projectFilePath": "/home/lrecodex/Documents/Programming/SSH CLIENT/SSH CLIENT.csproj",
   "expectedPackageFiles": [
@@ -13,9 +13,13 @@
     "/home/lrecodex/.nuget/packages/gtksharp/3.24.24.95/gtksharp.3.24.24.95.nupkg.sha512",
     "/home/lrecodex/.nuget/packages/microsoft.extensions.dependencyinjection.abstractions/8.0.2/microsoft.extensions.dependencyinjection.abstractions.8.0.2.nupkg.sha512",
     "/home/lrecodex/.nuget/packages/microsoft.extensions.logging.abstractions/8.0.3/microsoft.extensions.logging.abstractions.8.0.3.nupkg.sha512",
+    "/home/lrecodex/.nuget/packages/microsoft.net.illink.tasks/8.0.22/microsoft.net.illink.tasks.8.0.22.nupkg.sha512",
     "/home/lrecodex/.nuget/packages/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg.sha512",
     "/home/lrecodex/.nuget/packages/pangosharp/3.24.24.95/pangosharp.3.24.24.95.nupkg.sha512",
-    "/home/lrecodex/.nuget/packages/ssh.net/2025.1.0/ssh.net.2025.1.0.nupkg.sha512"
+    "/home/lrecodex/.nuget/packages/ssh.net/2025.1.0/ssh.net.2025.1.0.nupkg.sha512",
+    "/home/lrecodex/.nuget/packages/microsoft.netcore.app.runtime.linux-x64/8.0.22/microsoft.netcore.app.runtime.linux-x64.8.0.22.nupkg.sha512",
+    "/home/lrecodex/.nuget/packages/microsoft.aspnetcore.app.runtime.linux-x64/8.0.22/microsoft.aspnetcore.app.runtime.linux-x64.8.0.22.nupkg.sha512",
+    "/home/lrecodex/.nuget/packages/microsoft.netcore.app.host.linux-x64/8.0.22/microsoft.netcore.app.host.linux-x64.8.0.22.nupkg.sha512"
   ],
   "logs": []
 }
