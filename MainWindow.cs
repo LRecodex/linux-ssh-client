@@ -112,7 +112,11 @@ public class MainWindow : Window
         var headerIcon = CreateHeaderIcon();
         if (headerIcon != null)
         {
-            header.PackStart(headerIcon);
+            var headerLeftBox = new Box(Orientation.Horizontal, 6);
+            headerLeftBox.PackStart(headerIcon, false, false, 0);
+            header.PackStart(headerLeftBox);
+            headerIcon.Show();
+            headerLeftBox.ShowAll();
         }
 
         _connectBtn = MakeIconButton("network-connect-symbolic", "Connect");
@@ -795,10 +799,29 @@ label {
         try
         {
             var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "LrecodexTerm.png");
-            if (!System.IO.File.Exists(iconPath)) return null;
+            if (!System.IO.File.Exists(iconPath))
+            {
+                var altPath = System.IO.Path.Combine(Environment.CurrentDirectory, "LrecodexTerm.png");
+                if (System.IO.File.Exists(altPath))
+                {
+                    iconPath = altPath;
+                }
+            }
 
-            var pixbuf = new Gdk.Pixbuf(iconPath, 24, 24);
-            return new Image(pixbuf);
+            Image img;
+            if (System.IO.File.Exists(iconPath))
+            {
+                var pixbuf = new Gdk.Pixbuf(iconPath, 24, 24);
+                img = new Image(pixbuf);
+            }
+            else
+            {
+                img = new Image { IconName = "utilities-terminal-symbolic", PixelSize = 20 };
+            }
+
+            img.Halign = Align.Center;
+            img.Valign = Align.Center;
+            return img;
         }
         catch
         {

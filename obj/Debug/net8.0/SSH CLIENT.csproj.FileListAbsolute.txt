@@ -27,3 +27,4 @@
 /home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/Newtonsoft.Json.dll
 /home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/Renci.SshNet.dll
 /home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.sourcelink.json
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/LrecodexTerm.png

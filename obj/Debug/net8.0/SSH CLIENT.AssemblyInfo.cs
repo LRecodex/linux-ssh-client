@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SSH CLIENT")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+44b49d3431d87367143cdcbd3f9f3766452cb31a")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4a11d3307c16ad08e950c8bbaef2b6aee098a2ab")]
 [assembly: System.Reflection.AssemblyProductAttribute("SSH CLIENT")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SSH CLIENT")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
