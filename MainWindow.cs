@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using Gtk;
 using Renci.SshNet;
 
@@ -24,6 +25,7 @@ public class MainWindow : Window
     private readonly Button _connectBtn;
     private readonly Button _disconnectBtn;
     private readonly Button _refreshBtn;
+    private readonly Button _syncBtn;
     private readonly Label _statusLabel;
     private readonly Label _filesCountLabel;
 
@@ -41,6 +43,7 @@ public class MainWindow : Window
             args.RetVal = true;
         };
 
+        SetWindowIcon();
         ApplyCss();
 
         _sessions = SessionStore.Load();
@@ -106,17 +109,26 @@ public class MainWindow : Window
         };
         Titlebar = header;
 
+        var headerIcon = CreateHeaderIcon();
+        if (headerIcon != null)
+        {
+            header.PackStart(headerIcon);
+        }
+
         _connectBtn = MakeIconButton("network-connect-symbolic", "Connect");
         _disconnectBtn = MakeIconButton("network-disconnect-symbolic", "Disconnect");
         _refreshBtn = MakeIconButton("view-refresh-symbolic", "Refresh");
+        _syncBtn = MakeIconButton("view-refresh-symbolic", "Sync");
         _disconnectBtn.Sensitive = false;
         _refreshBtn.Sensitive = false;
+        _syncBtn.Sensitive = false;
         _connectBtn.StyleContext.AddClass("suggested-action");
         _disconnectBtn.StyleContext.AddClass("destructive-action");
 
         header.PackStart(_connectBtn);
         header.PackStart(_disconnectBtn);
         header.PackEnd(_refreshBtn);
+        header.PackEnd(_syncBtn);
 
         // Path row
         var pathRow = new Box(Orientation.Horizontal, 6);
@@ -176,6 +188,7 @@ public class MainWindow : Window
         _connectBtn.Clicked += (_, __) => Connect();
         _disconnectBtn.Clicked += (_, __) => Disconnect();
         _refreshBtn.Clicked += (_, __) => RefreshFiles();
+        _syncBtn.Clicked += (_, __) => SyncPathFromTerminal();
 
         _filesView.RowActivated += (_, args) => OnFileActivated(args);
         _pathEntry.Activated += (_, __) => RefreshFiles();
@@ -276,6 +289,7 @@ public class MainWindow : Window
             _disconnectBtn.Sensitive = true;
             _refreshBtn.Sensitive = true;
             _connectBtn.Sensitive = false;
+            _syncBtn.Sensitive = true;
             UpdateStatus($"Connected to {_selected.Host}");
 
             // force default remote path on connect
@@ -314,6 +328,7 @@ public class MainWindow : Window
         _disconnectBtn.Sensitive = false;
         _refreshBtn.Sensitive = false;
         _connectBtn.Sensitive = true;
+        _syncBtn.Sensitive = false;
         UpdateStatus("Disconnected");
         _filesStore.Clear();
         _filesCountLabel.Text = "0 items";
@@ -353,6 +368,25 @@ public class MainWindow : Window
         catch (Exception ex)
         {
             Toast("Refresh failed: " + ex.Message);
+        }
+    }
+
+    private void SyncPathFromTerminal()
+    {
+        if (_sftp == null || !_sftp.IsConnected || _selected == null) return;
+
+        try
+        {
+            var pwd = GetRemotePwd(_selected);
+            if (!string.IsNullOrWhiteSpace(pwd))
+            {
+                _pathEntry.Text = pwd.Trim();
+                RefreshFiles();
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast("Sync failed: " + ex.Message);
         }
     }
 
@@ -458,6 +492,7 @@ public class MainWindow : Window
                     _disconnectBtn.Sensitive = false;
                     _refreshBtn.Sensitive = false;
                     _connectBtn.Sensitive = true;
+                    _syncBtn.Sensitive = false;
                     UpdateStatus("Disconnected");
                 });
             };
@@ -541,6 +576,35 @@ public class MainWindow : Window
         }
 
         return new SftpClient(s.Host, s.Port, s.Username, s.Password);
+    }
+
+    private string GetRemotePwd(SshSession s)
+    {
+        if (!string.IsNullOrWhiteSpace(s.PrivateKeyPath))
+        {
+            var keyFile = string.IsNullOrWhiteSpace(s.PrivateKeyPassphrase)
+                ? new PrivateKeyFile(s.PrivateKeyPath)
+                : new PrivateKeyFile(s.PrivateKeyPath, s.PrivateKeyPassphrase);
+
+            var auth = new PrivateKeyAuthenticationMethod(s.Username, keyFile);
+            var conn = new ConnectionInfo(s.Host, s.Port, s.Username, auth);
+            using var ssh = new SshClient(conn);
+            ssh.Connect();
+            var cmd = ssh.RunCommand("pwd");
+            ssh.Disconnect();
+            return cmd.Result.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(s.Password))
+        {
+            throw new Exception("No password and no private key set for SSH.");
+        }
+
+        using var client = new SshClient(s.Host, s.Port, s.Username, s.Password);
+        client.Connect();
+        var result = client.RunCommand("pwd").Result;
+        client.Disconnect();
+        return result.Trim();
     }
 
     // ===== Session edit dialog =====
@@ -708,6 +772,38 @@ label {
         var provider = new CssProvider();
         provider.LoadFromData(css);
         StyleContext.AddProviderForScreen(Gdk.Screen.Default, provider, 800);
+    }
+
+    private void SetWindowIcon()
+    {
+        try
+        {
+            var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "LrecodexTerm.png");
+            if (System.IO.File.Exists(iconPath))
+            {
+                Icon = new Gdk.Pixbuf(iconPath);
+            }
+        }
+        catch
+        {
+            // ignore icon errors
+        }
+    }
+
+    private Image? CreateHeaderIcon()
+    {
+        try
+        {
+            var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "LrecodexTerm.png");
+            if (!System.IO.File.Exists(iconPath)) return null;
+
+            var pixbuf = new Gdk.Pixbuf(iconPath, 24, 24);
+            return new Image(pixbuf);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void Toast(string msg)

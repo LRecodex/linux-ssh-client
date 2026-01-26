@@ -14,4 +14,8 @@
     <PackageReference Include="GtkSharp" Version="3.24.24.95" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="LrecodexTerm.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -1,2 +1,3 @@
 /home/lrecodex/Documents/Programming/SSH CLIENT/bin/Release/net8.0/linux-x64/publish/SSH CLIENT.pdb
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Release/net8.0/linux-x64/publish/LrecodexTerm.png
 /home/lrecodex/Documents/Programming/SSH CLIENT/bin/Release/net8.0/linux-x64/publish/SSH CLIENT

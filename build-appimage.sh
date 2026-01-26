@@ -5,6 +5,7 @@ APPDIR="${PWD}/LrecodexTerm.AppDir"
 PUBLISH_DIR="${PWD}/bin/Release/net8.0/linux-x64/publish"
 LINUXDEPLOY_BIN="/tmp/linuxdeploy-x86_64.AppImage"
 GTK_PLUGIN="/tmp/linuxdeploy-plugin-gtk"
+ICON_PNG="${PWD}/LrecodexTerm.png"
 
 # Publish self-contained build
 
@@ -42,8 +43,11 @@ Terminal=false
 Categories=Network;Utility;
 EODESK
 
-# Icon
-cat <<'EOSVG' > "$APPDIR/usr/share/icons/hicolor/256x256/apps/LrecodexTerm.svg"
+# Icon (prefer provided PNG)
+if [ -f "$ICON_PNG" ]; then
+  cp -a "$ICON_PNG" "$APPDIR/usr/share/icons/hicolor/256x256/apps/LrecodexTerm.png"
+else
+  cat <<'EOSVG' > "$APPDIR/usr/share/icons/hicolor/256x256/apps/LrecodexTerm.svg"
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
@@ -57,6 +61,7 @@ cat <<'EOSVG' > "$APPDIR/usr/share/icons/hicolor/256x256/apps/LrecodexTerm.svg"
   <rect x="120" y="144" width="64" height="12" rx="6" fill="#93c5fd"/>
 </svg>
 EOSVG
+fi
 
 # Bundle xterm if present
 if [ -x /usr/bin/xterm ]; then

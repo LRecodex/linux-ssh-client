@@ -209,3 +209,4 @@
 /home/lrecodex/Documents/Programming/SSH CLIENT/obj/Release/net8.0/linux-x64/SSH CLIENT.pdb
 /home/lrecodex/Documents/Programming/SSH CLIENT/obj/Release/net8.0/linux-x64/SSH CLIENT.genruntimeconfig.cache
 /home/lrecodex/Documents/Programming/SSH CLIENT/obj/Release/net8.0/linux-x64/ref/SSH CLIENT.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Release/net8.0/linux-x64/LrecodexTerm.png
