@@ -1,0 +1,28 @@
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/SSH CLIENT
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/SSH CLIENT.deps.json
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/SSH CLIENT.runtimeconfig.json
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/SSH CLIENT.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/SSH CLIENT.pdb
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/AtkSharp.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/CairoSharp.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/GdkSharp.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/GioSharp.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/GLibSharp.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/GtkSharp.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/PangoSharp.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.csproj.AssemblyReference.cache
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.GeneratedMSBuildEditorConfig.editorconfig
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.AssemblyInfoInputs.cache
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.AssemblyInfo.cs
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.csproj.CoreCompileInputs.cache
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.csproj.CopyComplete
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/refint/SSH CLIENT.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.pdb
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/SSH CLIENT.genruntimeconfig.cache
+/home/lrecodex/Documents/Programming/SSH CLIENT/obj/Debug/net8.0/ref/SSH CLIENT.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/BouncyCastle.Cryptography.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/Microsoft.Extensions.DependencyInjection.Abstractions.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/Microsoft.Extensions.Logging.Abstractions.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/Newtonsoft.Json.dll
+/home/lrecodex/Documents/Programming/SSH CLIENT/bin/Debug/net8.0/Renci.SshNet.dll

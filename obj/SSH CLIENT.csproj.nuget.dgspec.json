@@ -1,0 +1,75 @@
+{
+  "format": 1,
+  "restore": {
+    "/home/lrecodex/Documents/Programming/SSH CLIENT/SSH CLIENT.csproj": {}
+  },
+  "projects": {
+    "/home/lrecodex/Documents/Programming/SSH CLIENT/SSH CLIENT.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/lrecodex/Documents/Programming/SSH CLIENT/SSH CLIENT.csproj",
+        "projectName": "SSH CLIENT",
+        "projectPath": "/home/lrecodex/Documents/Programming/SSH CLIENT/SSH CLIENT.csproj",
+        "packagesPath": "/home/lrecodex/.nuget/packages/",
+        "outputPath": "/home/lrecodex/Documents/Programming/SSH CLIENT/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/lrecodex/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "GtkSharp": {
+              "target": "Package",
+              "version": "[3.24.24.95, )"
+            },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.3, )"
+            },
+            "SSH.NET": {
+              "target": "Package",
+              "version": "[2025.1.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/8.0.122/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
