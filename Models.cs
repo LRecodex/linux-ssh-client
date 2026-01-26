@@ -13,5 +13,5 @@ public class SshSession
     public string? PrivateKeyPassphrase { get; set; } = null;
 
     // File browser start path
-    public string RemotePath { get; set; } = "/home";
+    public string RemotePath { get; set; } = "/";
 }

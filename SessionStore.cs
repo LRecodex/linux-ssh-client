@@ -18,7 +18,7 @@ public static class SessionStore
         {
             var seed = new List<SshSession>
             {
-                new SshSession { Name = "My Server", Host = "server.com", Username = "user", RemotePath = "/home/user" }
+                new SshSession { Name = "My Server", Host = "server.com", Username = "user", RemotePath = "/" }
             };
             Save(seed);
             return seed;

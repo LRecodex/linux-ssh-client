@@ -14,6 +14,8 @@ public class MainWindow : Window
     // UI
     private readonly TreeView _sessionsView;
     private readonly ListStore _sessionsStore;
+    private readonly TreeModelFilter _sessionsFilter;
+    private readonly Entry _sessionSearch;
 
     private readonly TreeView _filesView;
     private readonly ListStore _filesStore;
@@ -22,66 +24,93 @@ public class MainWindow : Window
     private readonly Button _connectBtn;
     private readonly Button _disconnectBtn;
     private readonly Button _refreshBtn;
+    private readonly Label _statusLabel;
+    private readonly Label _filesCountLabel;
 
     // Embedded terminal via XEmbed
     private Socket _termSocket;
     private Process? _termProc;
     private readonly Frame _termFrame;
 
-    public MainWindow() : base("MintTerm (SSH + SFTP)")
+    public MainWindow() : base("LrecodexTerm (SSH + SFTP)")
     {
-        SetDefaultSize(1100, 650);
+        SetDefaultSize(1120, 680);
         DeleteEvent += (_, args) =>
         {
             CleanupAndQuit();
             args.RetVal = true;
         };
 
+        ApplyCss();
+
         _sessions = SessionStore.Load();
 
         // Layout: Left (sessions) | Right (files + terminal)
         var root = new Paned(Orientation.Horizontal);
         Add(root);
+        root.Position = 280;
 
         // ===== Left: sessions =====
-        var leftBox = new Box(Orientation.Vertical, 6) { BorderWidth = 8 };
+        var leftBox = new Box(Orientation.Vertical, 8) { BorderWidth = 12 };
+        leftBox.StyleContext.AddClass("sidebar");
         root.Pack1(leftBox, resize: false, shrink: false);
 
         _sessionsStore = new ListStore(typeof(string));
-        _sessionsView = new TreeView(_sessionsStore);
+        _sessionsFilter = new TreeModelFilter(_sessionsStore, null);
+        _sessionsView = new TreeView(_sessionsFilter);
         _sessionsView.HeadersVisible = false;
         _sessionsView.AppendColumn("Session", new CellRendererText(), "text", 0);
 
+        var sessionsHeader = new Box(Orientation.Horizontal, 6);
+        sessionsHeader.PackStart(new Label("<b>Sessions</b>") { UseMarkup = true, Xalign = 0 }, true, true, 0);
+        var addHeaderBtn = MakeIconButton("list-add-symbolic", "New");
+        sessionsHeader.PackEnd(addHeaderBtn, false, false, 0);
+
+        _sessionSearch = new Entry { PlaceholderText = "Filter sessions..." };
+        _sessionSearch.StyleContext.AddClass("search-entry");
+        _sessionSearch.Changed += (_, __) => _sessionsFilter.Refilter();
+        _sessionsFilter.VisibleFunc = (model, iter) =>
+        {
+            var name = (string)model.GetValue(iter, 0);
+            var q = _sessionSearch.Text?.Trim();
+            if (string.IsNullOrEmpty(q)) return true;
+            return name.Contains(q, StringComparison.OrdinalIgnoreCase);
+        };
+
         var sessionsScroll = new ScrolledWindow();
         sessionsScroll.Add(_sessionsView);
-        leftBox.PackStart(new Label("Saved Sessions"), false, false, 0);
+        leftBox.PackStart(sessionsHeader, false, false, 0);
+        leftBox.PackStart(_sessionSearch, false, false, 0);
         leftBox.PackStart(sessionsScroll, true, true, 0);
 
         var btnRow = new Box(Orientation.Horizontal, 6);
-        var addBtn = new Button("New");
-        var editBtn = new Button("Edit");
-        var delBtn = new Button("Delete");
+        var addBtn = MakeIconButton("list-add-symbolic", "New");
+        var editBtn = MakeIconButton("document-edit-symbolic", "Edit");
+        var delBtn = MakeIconButton("user-trash-symbolic", "Delete");
         btnRow.PackStart(addBtn, true, true, 0);
         btnRow.PackStart(editBtn, true, true, 0);
         btnRow.PackStart(delBtn, true, true, 0);
         leftBox.PackStart(btnRow, false, false, 0);
 
         // ===== Right =====
-        var right = new Box(Orientation.Vertical, 6) { BorderWidth = 8 };
+        var right = new Box(Orientation.Vertical, 8) { BorderWidth = 12 };
+        right.StyleContext.AddClass("content");
         root.Pack2(right, resize: true, shrink: false);
 
         // Header bar (modern GTK3 layout)
         var header = new HeaderBar
         {
-            Title = "MintTerm",
+            Title = "LrecodexTerm",
             Subtitle = "SSH + SFTP",
             ShowCloseButton = true
         };
         Titlebar = header;
 
-        _connectBtn = new Button("Connect");
-        _disconnectBtn = new Button("Disconnect") { Sensitive = false };
-        _refreshBtn = new Button("Refresh") { Sensitive = false };
+        _connectBtn = MakeIconButton("network-connect-symbolic", "Connect");
+        _disconnectBtn = MakeIconButton("network-disconnect-symbolic", "Disconnect");
+        _refreshBtn = MakeIconButton("view-refresh-symbolic", "Refresh");
+        _disconnectBtn.Sensitive = false;
+        _refreshBtn.Sensitive = false;
         _connectBtn.StyleContext.AddClass("suggested-action");
         _disconnectBtn.StyleContext.AddClass("destructive-action");
 
@@ -92,6 +121,7 @@ public class MainWindow : Window
         // Path row
         var pathRow = new Box(Orientation.Horizontal, 6);
         _pathEntry = new Entry { Text = "/" };
+        _pathEntry.StyleContext.AddClass("path-entry");
         pathRow.PackStart(new Label("Remote:"), false, false, 0);
         pathRow.PackStart(_pathEntry, true, true, 0);
         right.PackStart(pathRow, false, false, 0);
@@ -101,11 +131,18 @@ public class MainWindow : Window
         right.PackStart(vpaned, true, true, 0);
 
         // Files view
-        _filesStore = new ListStore(typeof(string), typeof(string), typeof(string));
+        _filesStore = new ListStore(typeof(string), typeof(string), typeof(string), typeof(string));
         _filesView = new TreeView(_filesStore);
-        _filesView.AppendColumn("Name", new CellRendererText(), "text", 0);
-        _filesView.AppendColumn("Size", new CellRendererText(), "text", 1);
-        _filesView.AppendColumn("Modified", new CellRendererText(), "text", 2);
+        var iconRenderer = new CellRendererPixbuf();
+        var nameRenderer = new CellRendererText();
+        var nameCol = new TreeViewColumn { Title = "Name" };
+        nameCol.PackStart(iconRenderer, false);
+        nameCol.PackStart(nameRenderer, true);
+        nameCol.AddAttribute(iconRenderer, "icon-name", 0);
+        nameCol.AddAttribute(nameRenderer, "text", 1);
+        _filesView.AppendColumn(nameCol);
+        _filesView.AppendColumn("Size", new CellRendererText(), "text", 2);
+        _filesView.AppendColumn("Modified", new CellRendererText(), "text", 3);
 
         var filesScroll = new ScrolledWindow();
         filesScroll.Add(_filesView);
@@ -117,11 +154,21 @@ public class MainWindow : Window
         _termFrame.Add(_termSocket);
         vpaned.Pack2(_termFrame, resize: false, shrink: false);
 
+        // Status bar
+        var statusRow = new Box(Orientation.Horizontal, 6);
+        statusRow.StyleContext.AddClass("statusbar");
+        _statusLabel = new Label("Disconnected") { Xalign = 0 };
+        _filesCountLabel = new Label("0 items") { Xalign = 1 };
+        statusRow.PackStart(_statusLabel, true, true, 0);
+        statusRow.PackEnd(_filesCountLabel, false, false, 0);
+        right.PackStart(statusRow, false, false, 0);
+
         // Events
         LoadSessionsIntoUI();
 
         _sessionsView.CursorChanged += (_, __) => SelectSessionFromUI();
 
+        addHeaderBtn.Clicked += (_, __) => AddSession();
         addBtn.Clicked += (_, __) => AddSession();
         editBtn.Clicked += (_, __) => EditSession();
         delBtn.Clicked += (_, __) => DeleteSession();
@@ -141,12 +188,14 @@ public class MainWindow : Window
         {
             _sessionsStore.AppendValues(s.Name);
         }
+        _sessionsFilter.Refilter();
     }
 
     private void SelectSessionFromUI()
     {
         if (!_sessionsView.Selection.GetSelected(out TreeIter iter)) return;
-        var name = (string)_sessionsStore.GetValue(iter, 0);
+        var childIter = _sessionsFilter.ConvertIterToChildIter(iter);
+        var name = (string)_sessionsStore.GetValue(childIter, 0);
 
         _selected = _sessions.Find(s => s.Name == name);
         if (_selected != null)
@@ -157,7 +206,7 @@ public class MainWindow : Window
 
     private void AddSession()
     {
-        var s = new SshSession { Name = "New Session", Host = "server.com", Username = "user", RemotePath = "/home/user" };
+        var s = new SshSession { Name = "New Session", Host = "server.com", Username = "user", RemotePath = "/" };
         if (EditDialog(s, isNew: true))
         {
             _sessions.Add(s);
@@ -227,6 +276,12 @@ public class MainWindow : Window
             _disconnectBtn.Sensitive = true;
             _refreshBtn.Sensitive = true;
             _connectBtn.Sensitive = false;
+            UpdateStatus($"Connected to {_selected.Host}");
+
+            // force default remote path on connect
+            _pathEntry.Text = "/";
+            _selected.RemotePath = "/";
+            SessionStore.Save(_sessions);
 
             // show files immediately
             RefreshFiles();
@@ -259,7 +314,9 @@ public class MainWindow : Window
         _disconnectBtn.Sensitive = false;
         _refreshBtn.Sensitive = false;
         _connectBtn.Sensitive = true;
+        UpdateStatus("Disconnected");
         _filesStore.Clear();
+        _filesCountLabel.Text = "0 items";
     }
 
     private void RefreshFiles()
@@ -276,18 +333,22 @@ public class MainWindow : Window
             _filesStore.Clear();
             if (path != "/")
             {
-                _filesStore.AppendValues("..", "-", "-");
+                _filesStore.AppendValues("go-up-symbolic", "..", "-", "-");
             }
 
+            var count = 0;
             foreach (var f in list)
             {
                 if (f.Name == ".") continue;
                 if (f.Name == "..") continue;
 
+                var icon = f.IsDirectory ? "folder-symbolic" : "text-x-generic-symbolic";
                 var size = f.IsDirectory ? "-" : f.Length.ToString();
                 var mod = f.LastWriteTime.ToString("yyyy-MM-dd HH:mm");
-                _filesStore.AppendValues(f.Name, size, mod);
+                _filesStore.AppendValues(icon, f.Name, size, mod);
+                count++;
             }
+            _filesCountLabel.Text = $"{count} items";
         }
         catch (Exception ex)
         {
@@ -300,7 +361,7 @@ public class MainWindow : Window
         if (_sftp == null || !_sftp.IsConnected) return;
         if (!_filesView.Selection.GetSelected(out TreeIter iter)) return;
 
-        var name = (string)_filesStore.GetValue(iter, 0);
+        var name = (string)_filesStore.GetValue(iter, 1);
         if (name == "..")
         {
             _pathEntry.Text = ParentPath(_pathEntry.Text);
@@ -397,6 +458,7 @@ public class MainWindow : Window
                     _disconnectBtn.Sensitive = false;
                     _refreshBtn.Sensitive = false;
                     _connectBtn.Sensitive = true;
+                    UpdateStatus("Disconnected");
                 });
             };
         }
@@ -566,6 +628,86 @@ public class MainWindow : Window
     private static string QuoteForShell(string s)
     {
         return "'" + s.Replace("'", "'\"'\"'") + "'";
+    }
+
+    private static Button MakeIconButton(string iconName, string label)
+    {
+        var box = new Box(Orientation.Horizontal, 6);
+        var img = new Image { IconName = iconName, PixelSize = 16 };
+        var lab = new Label(label);
+        box.PackStart(img, false, false, 0);
+        box.PackStart(lab, false, false, 0);
+        return new Button { Child = box };
+    }
+
+    private void UpdateStatus(string text)
+    {
+        _statusLabel.Text = text;
+    }
+
+    private void ApplyCss()
+    {
+        var css = @"
+window {
+  background: #0c0f14;
+}
+.sidebar {
+  background: #10141c;
+  border-right: 1px solid #1c2230;
+}
+.content {
+  background: #0c0f14;
+}
+.search-entry, .path-entry, entry {
+  background: #141a24;
+  color: #e7ecf5;
+  border-radius: 8px;
+  border: 1px solid #222a3a;
+  padding: 6px;
+}
+headerbar {
+  background: #10141c;
+  color: #e7ecf5;
+  border-bottom: 1px solid #1c2230;
+}
+button {
+  border-radius: 8px;
+  background: #1a2231;
+  color: #e7ecf5;
+  padding: 6px 10px;
+}
+button.suggested-action {
+  background: #3b82f6;
+  color: #ffffff;
+}
+button.destructive-action {
+  background: #ef4444;
+  color: #ffffff;
+}
+treeview {
+  background: #0c0f14;
+  color: #e7ecf5;
+}
+treeview.view:selected,
+treeview.view:selected:focus {
+  background: #243b67;
+  color: #ffffff;
+}
+treeview.view:focus {
+  outline: none;
+}
+.statusbar {
+  padding: 8px 10px;
+  border-top: 1px solid #1c2230;
+}
+label {
+  color: #c9d4ea;
+}
+";
+
+        var provider = new CssProvider();
+        provider.LoadFromData(css);
+        StyleContext.AddProviderForScreen(Gdk.Screen.Default, provider, 800);
     }
 
     private void Toast(string msg)
