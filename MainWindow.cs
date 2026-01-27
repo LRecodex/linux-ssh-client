@@ -665,7 +665,23 @@ public class MainWindow : Window
             {
                 _sftp!.DownloadFile(remotePath, fs);
             }
-            Process.Start(new ProcessStartInfo("xdg-open", tempPath) { UseShellExecute = false });
+
+            var contentType = GLib.ContentType.Guess(tempPath, null, out _);
+            using var dlg = new AppChooserDialog(this, DialogFlags.Modal, contentType);
+            dlg.ShowAll();
+            if (dlg.Run() != (int)ResponseType.Ok)
+            {
+                return;
+            }
+
+            var appInfo = dlg.AppInfo;
+            if (appInfo != null)
+            {
+                var uri = new Uri(tempPath).AbsoluteUri;
+                var list = new GLib.List(IntPtr.Zero);
+                list.Append(GLib.Marshaller.StringToPtrGStrdup(uri));
+                appInfo.LaunchUris(list, null);
+            }
         }
         catch (Exception ex)
         {
