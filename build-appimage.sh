@@ -63,11 +63,16 @@ else
 EOSVG
 fi
 
-# Bundle xterm if present
+# Bundle xterm and sshpass if present
 if [ -x /usr/bin/xterm ]; then
   cp -a /usr/bin/xterm "$APPDIR/usr/bin/"
 else
   echo "Warning: /usr/bin/xterm not found; embedded terminal will fail." >&2
+fi
+if [ -x /usr/bin/sshpass ]; then
+  cp -a /usr/bin/sshpass "$APPDIR/usr/bin/"
+else
+  echo "Warning: /usr/bin/sshpass not found; password-based terminal login will prompt." >&2
 fi
 
 # Auto-download linuxdeploy and GTK plugin if missing
