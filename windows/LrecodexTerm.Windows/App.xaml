@@ -1,0 +1,19 @@
+<Application x:Class="LrecodexTerm.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <Color x:Key="Bg">#0B0F14</Color>
+            <Color x:Key="Panel">#111722</Color>
+            <Color x:Key="Accent">#2F7CF6</Color>
+            <Color x:Key="Text">#E9EFFF</Color>
+            <Color x:Key="Muted">#A8B3C7</Color>
+            <SolidColorBrush x:Key="BgBrush" Color="{StaticResource Bg}" />
+            <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource Panel}" />
+            <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource Accent}" />
+            <SolidColorBrush x:Key="TextBrush" Color="{StaticResource Text}" />
+            <SolidColorBrush x:Key="MutedBrush" Color="{StaticResource Muted}" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
