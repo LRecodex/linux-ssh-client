@@ -7,10 +7,38 @@ using Renci.SshNet;
 
 public class MainWindow : Window
 {
+    private sealed class TabState
+    {
+        public SshSession Session { get; }
+        public SftpClient? Sftp { get; set; }
+        public Entry PathEntry { get; }
+        public TreeView FilesView { get; }
+        public ListStore FilesStore { get; }
+        public TreeModelSort FilesSort { get; }
+        public Label FilesCountLabel { get; }
+        public Socket TermSocket { get; set; }
+        public Process? TermProc { get; set; }
+        public Frame TermFrame { get; }
+        public Widget Container { get; }
+
+        public TabState(SshSession session, Entry pathEntry, TreeView filesView, ListStore filesStore, TreeModelSort filesSort, Label filesCountLabel, Socket termSocket, Frame termFrame, Widget container)
+        {
+            Session = session;
+            PathEntry = pathEntry;
+            FilesView = filesView;
+            FilesStore = filesStore;
+            FilesSort = filesSort;
+            FilesCountLabel = filesCountLabel;
+            TermSocket = termSocket;
+            TermFrame = termFrame;
+            Container = container;
+        }
+    }
+
     // Data
     private readonly List<SshSession> _sessions;
     private SshSession? _selected;
-    private SftpClient? _sftp;
+    private readonly Dictionary<string, TabState> _tabs = new();
 
     // UI
     private readonly TreeView _sessionsView;
@@ -18,22 +46,12 @@ public class MainWindow : Window
     private readonly TreeModelFilter _sessionsFilter;
     private readonly Entry _sessionSearch;
 
-    private readonly TreeView _filesView;
-    private readonly ListStore _filesStore;
-    private readonly TreeModelSort _filesSort;
-
-    private readonly Entry _pathEntry;
+    private readonly Notebook _tabsNotebook;
     private readonly Button _connectBtn;
     private readonly Button _disconnectBtn;
     private readonly Button _refreshBtn;
     private readonly Button _syncBtn;
     private readonly Label _statusLabel;
-    private readonly Label _filesCountLabel;
-
-    // Embedded terminal via XEmbed
-    private Socket _termSocket;
-    private Process? _termProc;
-    private readonly Frame _termFrame;
 
     public MainWindow() : base("LrecodexTerm (SSH + SFTP)")
     {
@@ -135,55 +153,17 @@ public class MainWindow : Window
         header.PackEnd(_refreshBtn);
         header.PackEnd(_syncBtn);
 
-        // Path row
-        var pathRow = new Box(Orientation.Horizontal, 6);
-        _pathEntry = new Entry { Text = "/" };
-        _pathEntry.StyleContext.AddClass("path-entry");
-        pathRow.PackStart(new Label("Remote:"), false, false, 0);
-        pathRow.PackStart(_pathEntry, true, true, 0);
-        right.PackStart(pathRow, false, false, 0);
-
-        // Split: files (top) + terminal (bottom)
-        var vpaned = new Paned(Orientation.Vertical);
-        right.PackStart(vpaned, true, true, 0);
-
-        // Files view
-        _filesStore = new ListStore(typeof(string), typeof(string), typeof(string), typeof(string));
-        _filesSort = new TreeModelSort(_filesStore);
-        _filesView = new TreeView(_filesSort);
-        _filesView.AddEvents((int)Gdk.EventMask.ButtonPressMask);
-        var iconRenderer = new CellRendererPixbuf();
-        var nameRenderer = new CellRendererText();
-        var nameCol = new TreeViewColumn { Title = "Name" };
-        nameCol.PackStart(iconRenderer, false);
-        nameCol.PackStart(nameRenderer, true);
-        nameCol.AddAttribute(iconRenderer, "icon-name", 0);
-        nameCol.AddAttribute(nameRenderer, "text", 1);
-        nameCol.SortColumnId = 1;
-        nameCol.SortIndicator = true;
-        _filesView.AppendColumn(nameCol);
-        var sizeCol = new TreeViewColumn("Size", new CellRendererText(), "text", 2) { SortColumnId = 2, SortIndicator = true };
-        var modCol = new TreeViewColumn("Modified", new CellRendererText(), "text", 3) { SortColumnId = 3, SortIndicator = true };
-        _filesView.AppendColumn(sizeCol);
-        _filesView.AppendColumn(modCol);
-
-        var filesScroll = new ScrolledWindow();
-        filesScroll.Add(_filesView);
-        vpaned.Pack1(filesScroll, resize: true, shrink: false);
-
-        // Terminal embed
-        _termSocket = CreateTerminalSocket();
-        _termFrame = new Frame("Terminal");
-        _termFrame.Add(_termSocket);
-        vpaned.Pack2(_termFrame, resize: false, shrink: false);
+        _tabsNotebook = new Notebook();
+        _tabsNotebook.ShowTabs = true;
+        _tabsNotebook.Scrollable = true;
+        _tabsNotebook.TabPos = PositionType.Top;
+        right.PackStart(_tabsNotebook, true, true, 0);
 
         // Status bar
         var statusRow = new Box(Orientation.Horizontal, 6);
         statusRow.StyleContext.AddClass("statusbar");
         _statusLabel = new Label("Disconnected") { Xalign = 0 };
-        _filesCountLabel = new Label("0 items") { Xalign = 1 };
         statusRow.PackStart(_statusLabel, true, true, 0);
-        statusRow.PackEnd(_filesCountLabel, false, false, 0);
         right.PackStart(statusRow, false, false, 0);
 
         // Events
@@ -201,9 +181,7 @@ public class MainWindow : Window
         _refreshBtn.Clicked += (_, __) => RefreshFiles();
         _syncBtn.Clicked += (_, __) => SyncPathFromTerminal();
 
-        _filesView.RowActivated += (_, args) => OnFileActivated(args);
-        _filesView.ButtonPressEvent += OnFilesButtonPress;
-        _pathEntry.Activated += (_, __) => RefreshFiles();
+        _tabsNotebook.SwitchPage += (_, __) => UpdateStatusForCurrentTab();
     }
 
     private void LoadSessionsIntoUI()
@@ -225,7 +203,11 @@ public class MainWindow : Window
         _selected = _sessions.Find(s => s.Name == name);
         if (_selected != null)
         {
-            _pathEntry.Text = _selected.RemotePath;
+            if (_tabs.TryGetValue(_selected.Name, out var tab))
+            {
+                var page = _tabsNotebook.PageNum(tab.Container);
+                if (page >= 0) _tabsNotebook.Page = page;
+            }
         }
     }
 
@@ -277,6 +259,142 @@ public class MainWindow : Window
         }
     }
 
+    private TabState GetOrCreateTab(SshSession session)
+    {
+        if (_tabs.TryGetValue(session.Name, out var existing))
+        {
+            var page = _tabsNotebook.PageNum(existing.Container);
+            if (page >= 0) _tabsNotebook.Page = page;
+            return existing;
+        }
+
+        var pathEntry = new Entry { Text = session.RemotePath };
+        pathEntry.StyleContext.AddClass("path-entry");
+        var pathRow = new Box(Orientation.Horizontal, 6);
+        pathRow.PackStart(new Label("Remote:"), false, false, 0);
+        pathRow.PackStart(pathEntry, true, true, 0);
+
+        var filesStore = new ListStore(typeof(string), typeof(string), typeof(string), typeof(string));
+        var filesSort = new TreeModelSort(filesStore);
+        var filesView = new TreeView(filesSort);
+        filesView.AddEvents((int)Gdk.EventMask.ButtonPressMask);
+        var iconRenderer = new CellRendererPixbuf();
+        var nameRenderer = new CellRendererText();
+        var nameCol = new TreeViewColumn { Title = "Name" };
+        nameCol.PackStart(iconRenderer, false);
+        nameCol.PackStart(nameRenderer, true);
+        nameCol.AddAttribute(iconRenderer, "icon-name", 0);
+        nameCol.AddAttribute(nameRenderer, "text", 1);
+        nameCol.SortColumnId = 1;
+        nameCol.SortIndicator = true;
+        filesView.AppendColumn(nameCol);
+        var sizeCol = new TreeViewColumn("Size", new CellRendererText(), "text", 2) { SortColumnId = 2, SortIndicator = true };
+        var modCol = new TreeViewColumn("Modified", new CellRendererText(), "text", 3) { SortColumnId = 3, SortIndicator = true };
+        filesView.AppendColumn(sizeCol);
+        filesView.AppendColumn(modCol);
+
+        var filesScroll = new ScrolledWindow();
+        filesScroll.Add(filesView);
+
+        var filesCount = new Label("0 items") { Xalign = 1 };
+
+        var filesBox = new Box(Orientation.Vertical, 6);
+        filesBox.PackStart(pathRow, false, false, 0);
+        filesBox.PackStart(filesScroll, true, true, 0);
+        filesBox.PackStart(filesCount, false, false, 0);
+
+        var termSocket = CreateTerminalSocket();
+        var termFrame = new Frame("Terminal");
+        termFrame.SetSizeRequest(520, -1);
+        termFrame.Add(termSocket);
+
+        var split = new Paned(Orientation.Horizontal);
+        split.Pack1(termFrame, resize: true, shrink: false);
+        split.Pack2(filesBox, resize: true, shrink: false);
+        split.Position = 520;
+
+        var tab = new TabState(session, pathEntry, filesView, filesStore, filesSort, filesCount, termSocket, termFrame, split);
+
+        filesView.RowActivated += (_, __) => OnFileActivated(tab);
+        filesView.ButtonPressEvent += (o, args) => OnFilesButtonPress(tab, o, args);
+        pathEntry.Activated += (_, __) => RefreshFiles(tab);
+
+        var tabLabel = BuildTabLabel(session.Name);
+        _tabsNotebook.AppendPage(split, tabLabel);
+        _tabsNotebook.ShowAll();
+        _tabsNotebook.Page = _tabsNotebook.NPages - 1;
+
+        _tabs[session.Name] = tab;
+        return tab;
+    }
+
+    private TabState? GetCurrentTabState()
+    {
+        var page = _tabsNotebook.Page;
+        if (page < 0) return null;
+        var widget = _tabsNotebook.GetNthPage(page);
+        foreach (var kv in _tabs)
+        {
+            if (kv.Value.Container == widget) return kv.Value;
+        }
+        return null;
+    }
+
+    private void UpdateStatusForCurrentTab()
+    {
+        var tab = GetCurrentTabState();
+        if (tab == null)
+        {
+            UpdateStatus("Disconnected");
+            _disconnectBtn.Sensitive = false;
+            _refreshBtn.Sensitive = false;
+            _syncBtn.Sensitive = false;
+            _connectBtn.Sensitive = true;
+            return;
+        }
+        if (tab.Sftp != null && tab.Sftp.IsConnected)
+        {
+            UpdateStatus($"Connected to {tab.Session.Host}");
+            _disconnectBtn.Sensitive = true;
+            _refreshBtn.Sensitive = true;
+            _syncBtn.Sensitive = true;
+            _connectBtn.Sensitive = false;
+        }
+        else
+        {
+            UpdateStatus("Disconnected");
+            _disconnectBtn.Sensitive = false;
+            _refreshBtn.Sensitive = false;
+            _syncBtn.Sensitive = false;
+            _connectBtn.Sensitive = true;
+        }
+    }
+
+    private Widget BuildTabLabel(string title)
+    {
+        var box = new Box(Orientation.Horizontal, 6);
+        var label = new Label(title);
+        label.StyleContext.AddClass("tab-text");
+        var close = new Button("✕");
+        close.Relief = ReliefStyle.None;
+        close.StyleContext.AddClass("tab-close");
+
+        close.Clicked += (_, __) =>
+        {
+            if (_tabs.TryGetValue(title, out var tab))
+            {
+                Disconnect(tab);
+                _tabsNotebook.RemovePage(_tabsNotebook.PageNum(tab.Container));
+                _tabs.Remove(title);
+            }
+        };
+
+        box.PackStart(label, false, false, 0);
+        box.PackStart(close, false, false, 0);
+        box.ShowAll();
+        return box;
+    }
+
     // ===== Connect/Disconnect =====
 
     private void Connect()
@@ -289,14 +407,21 @@ public class MainWindow : Window
 
         try
         {
-            Disconnect();
+            var tab = GetOrCreateTab(_selected);
+            tab.Container.ShowAll();
+            _tabsNotebook.Page = _tabsNotebook.PageNum(tab.Container);
+            while (Application.EventsPending())
+            {
+                Application.RunIteration();
+            }
+            Disconnect(tab);
 
             // 1) Terminal: embed xterm and run ssh (defer until socket is realized)
-            ScheduleEmbeddedSshTerminal(_selected, attempt: 0);
+            ScheduleEmbeddedSshTerminal(tab, attempt: 0);
 
             // 2) SFTP: connect using SSH.NET
-            _sftp = CreateSftpClient(_selected);
-            _sftp.Connect();
+            tab.Sftp = CreateSftpClient(_selected);
+            tab.Sftp.Connect();
 
             _disconnectBtn.Sensitive = true;
             _refreshBtn.Sensitive = true;
@@ -305,29 +430,37 @@ public class MainWindow : Window
             UpdateStatus($"Connected to {_selected.Host}");
 
             // force default remote path on connect
-            _pathEntry.Text = "/";
+            tab.PathEntry.Text = "/";
             _selected.RemotePath = "/";
             SessionStore.Save(_sessions);
 
             // show files immediately
-            RefreshFiles();
+            RefreshFiles(tab);
         }
         catch (Exception ex)
         {
             Toast("Connect failed: " + ex.Message);
-            Disconnect();
+            var tab = GetCurrentTabState();
+            if (tab != null) Disconnect(tab);
         }
     }
 
     private void Disconnect()
     {
+        var tab = GetCurrentTabState();
+        if (tab == null) return;
+        Disconnect(tab);
+    }
+
+    private void Disconnect(TabState tab)
+    {
         try
         {
-            if (_sftp != null)
+            if (tab.Sftp != null)
             {
-                if (_sftp.IsConnected) _sftp.Disconnect();
-                _sftp.Dispose();
-                _sftp = null;
+                if (tab.Sftp.IsConnected) tab.Sftp.Disconnect();
+                tab.Sftp.Dispose();
+                tab.Sftp = null;
             }
         }
         catch
@@ -335,32 +468,39 @@ public class MainWindow : Window
             // ignore
         }
 
-        StopEmbeddedTerminal();
+        StopEmbeddedTerminal(tab);
 
         _disconnectBtn.Sensitive = false;
         _refreshBtn.Sensitive = false;
         _connectBtn.Sensitive = true;
         _syncBtn.Sensitive = false;
         UpdateStatus("Disconnected");
-        _filesStore.Clear();
-        _filesCountLabel.Text = "0 items";
+        tab.FilesStore.Clear();
+        tab.FilesCountLabel.Text = "0 items";
     }
 
     private void RefreshFiles()
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
+        var tab = GetCurrentTabState();
+        if (tab == null) return;
+        RefreshFiles(tab);
+    }
+
+    private void RefreshFiles(TabState tab)
+    {
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
 
         try
         {
-            var path = _pathEntry.Text.Trim();
+            var path = tab.PathEntry.Text.Trim();
             if (string.IsNullOrWhiteSpace(path)) path = "/";
 
-            var list = _sftp.ListDirectory(path);
+            var list = tab.Sftp.ListDirectory(path);
 
-            _filesStore.Clear();
+            tab.FilesStore.Clear();
             if (path != "/")
             {
-                _filesStore.AppendValues("go-up-symbolic", "..", "-", "-");
+                tab.FilesStore.AppendValues("go-up-symbolic", "..", "-", "-");
             }
 
             var count = 0;
@@ -372,10 +512,10 @@ public class MainWindow : Window
                 var icon = f.IsDirectory ? "folder-symbolic" : "text-x-generic-symbolic";
                 var size = f.IsDirectory ? "-" : f.Length.ToString();
                 var mod = f.LastWriteTime.ToString("yyyy-MM-dd HH:mm");
-                _filesStore.AppendValues(icon, f.Name, size, mod);
+                tab.FilesStore.AppendValues(icon, f.Name, size, mod);
                 count++;
             }
-            _filesCountLabel.Text = $"{count} items";
+            tab.FilesCountLabel.Text = $"{count} items";
         }
         catch (Exception ex)
         {
@@ -385,15 +525,16 @@ public class MainWindow : Window
 
     private void SyncPathFromTerminal()
     {
-        if (_sftp == null || !_sftp.IsConnected || _selected == null) return;
+        var tab = GetCurrentTabState();
+        if (tab == null || tab.Sftp == null || !tab.Sftp.IsConnected) return;
 
         try
         {
-            var pwd = GetRemotePwd(_selected);
+            var pwd = GetRemotePwd(tab.Session);
             if (!string.IsNullOrWhiteSpace(pwd))
             {
-                _pathEntry.Text = pwd.Trim();
-                RefreshFiles();
+                tab.PathEntry.Text = pwd.Trim();
+                RefreshFiles(tab);
             }
         }
         catch (Exception ex)
@@ -402,66 +543,66 @@ public class MainWindow : Window
         }
     }
 
-    private bool TryGetSelectedName(out string name, out TreeIter iter)
+    private bool TryGetSelectedName(TabState tab, out string name, out TreeIter iter)
     {
         name = string.Empty;
         iter = TreeIter.Zero;
 
-        if (!_filesView.Selection.GetSelected(out TreeIter sortIter)) return false;
-        iter = _filesSort.ConvertIterToChildIter(sortIter);
-        name = (string)_filesStore.GetValue(iter, 1);
+        if (!tab.FilesView.Selection.GetSelected(out TreeIter sortIter)) return false;
+        iter = tab.FilesSort.ConvertIterToChildIter(sortIter);
+        name = (string)tab.FilesStore.GetValue(iter, 1);
         return true;
     }
 
-    private void DownloadSelected()
+    private void DownloadSelected(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        if (!TryGetSelectedRemotePath(out var remotePath, out var isDir)) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        if (!TryGetSelectedRemotePath(tab, out var remotePath, out var isDir)) return;
 
         if (isDir)
         {
-            DownloadFolder(remotePath);
+            DownloadFolder(tab, remotePath);
         }
         else
         {
-            DownloadFile(remotePath);
+            DownloadFile(tab, remotePath);
         }
     }
 
-    private void UploadFileDialog()
+    private void UploadFileDialog(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
         using var d = new FileChooserDialog("Upload File", this, FileChooserAction.Open,
             "Cancel", ResponseType.Cancel, "Upload", ResponseType.Accept);
 
         if (d.Run() == (int)ResponseType.Accept)
         {
-            UploadFile(d.Filename);
+            UploadFile(tab, d.Filename);
         }
     }
 
-    private void UploadFolderDialog()
+    private void UploadFolderDialog(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
         using var d = new FileChooserDialog("Upload Folder", this, FileChooserAction.SelectFolder,
             "Cancel", ResponseType.Cancel, "Upload", ResponseType.Accept);
 
         if (d.Run() == (int)ResponseType.Accept)
         {
-            UploadFolder(d.Filename);
+            UploadFolder(tab, d.Filename);
         }
     }
 
-    private void CopyRemotePath()
+    private void CopyRemotePath(TabState tab)
     {
-        if (!TryGetSelectedRemotePath(out var remotePath, out _)) return;
+        if (!TryGetSelectedRemotePath(tab, out var remotePath, out _)) return;
         var cb = Clipboard.Get(Gdk.Atom.Intern("CLIPBOARD", false));
         cb.Text = remotePath;
     }
 
-    private void PasteUploadFromClipboard()
+    private void PasteUploadFromClipboard(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
         var cb = Clipboard.Get(Gdk.Atom.Intern("CLIPBOARD", false));
         var text = cb.WaitForText();
         if (string.IsNullOrWhiteSpace(text)) return;
@@ -469,11 +610,11 @@ public class MainWindow : Window
         var path = text.Trim();
         if (System.IO.File.Exists(path))
         {
-            UploadFile(path);
+            UploadFile(tab, path);
         }
         else if (System.IO.Directory.Exists(path))
         {
-            UploadFolder(path);
+            UploadFolder(tab, path);
         }
         else
         {
@@ -481,19 +622,19 @@ public class MainWindow : Window
         }
     }
 
-    private bool TryGetSelectedRemotePath(out string remotePath, out bool isDir)
+    private bool TryGetSelectedRemotePath(TabState tab, out string remotePath, out bool isDir)
     {
         remotePath = string.Empty;
         isDir = false;
 
-        if (!TryGetSelectedName(out var name, out var iter)) return false;
+        if (!TryGetSelectedName(tab, out var name, out var iter)) return false;
         if (name == "..") return false;
 
-        remotePath = CombineRemote(_pathEntry.Text, name);
+        remotePath = CombineRemote(tab.PathEntry.Text, name);
 
         try
         {
-            var attrs = _sftp!.GetAttributes(remotePath);
+            var attrs = tab.Sftp!.GetAttributes(remotePath);
             isDir = attrs.IsDirectory;
         }
         catch
@@ -504,7 +645,7 @@ public class MainWindow : Window
         return true;
     }
 
-    private void DownloadFile(string remotePath)
+    private void DownloadFile(TabState tab, string remotePath)
     {
         using var d = new FileChooserDialog("Save File As", this, FileChooserAction.Save,
             "Cancel", ResponseType.Cancel, "Save", ResponseType.Accept);
@@ -513,13 +654,13 @@ public class MainWindow : Window
         if (d.Run() != (int)ResponseType.Accept) return;
 
         using var fs = System.IO.File.Create(d.Filename);
-        _sftp!.DownloadFile(remotePath, fs);
+        tab.Sftp!.DownloadFile(remotePath, fs);
     }
 
-    private void RenameSelected()
+    private void RenameSelected(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        if (!TryGetSelectedRemotePath(out var remotePath, out _)) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        if (!TryGetSelectedRemotePath(tab, out var remotePath, out _)) return;
 
         var oldName = System.IO.Path.GetFileName(remotePath.TrimEnd('/'));
         using var d = new Dialog("Rename", this, DialogFlags.Modal);
@@ -536,16 +677,16 @@ public class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(newName) && newName != oldName)
             {
                 var newPath = CombineRemote(ParentPath(remotePath), newName);
-                _sftp!.RenameFile(remotePath, newPath);
-                RefreshFiles();
+                tab.Sftp!.RenameFile(remotePath, newPath);
+                RefreshFiles(tab);
             }
         }
     }
 
-    private void DeleteSelected()
+    private void DeleteSelected(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        if (!TryGetSelectedRemotePath(out var remotePath, out var isDir)) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        if (!TryGetSelectedRemotePath(tab, out var remotePath, out var isDir)) return;
 
         using var md = new MessageDialog(this, DialogFlags.Modal, MessageType.Question, ButtonsType.YesNo,
             $"Delete {(isDir ? "folder" : "file")} '{System.IO.Path.GetFileName(remotePath)}'?");
@@ -553,11 +694,11 @@ public class MainWindow : Window
 
         try
         {
-            using var ssh = CreateSshClient(_selected!);
+            using var ssh = CreateSshClient(tab.Session);
             ssh.Connect();
             ssh.RunCommand($"rm -rf {QuoteForShell(remotePath)}");
             ssh.Disconnect();
-            RefreshFiles();
+            RefreshFiles(tab);
         }
         catch (Exception ex)
         {
@@ -565,10 +706,10 @@ public class MainWindow : Window
         }
     }
 
-    private void CompressSelected()
+    private void CompressSelected(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        if (!TryGetSelectedRemotePath(out var remotePath, out _)) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        if (!TryGetSelectedRemotePath(tab, out var remotePath, out _)) return;
 
         var baseName = System.IO.Path.GetFileName(remotePath.TrimEnd('/'));
         var format = ChooseArchiveFormat();
@@ -579,7 +720,7 @@ public class MainWindow : Window
 
         try
         {
-            using var ssh = CreateSshClient(_selected!);
+            using var ssh = CreateSshClient(tab.Session);
             ssh.Connect();
             if (format == "zip")
             {
@@ -590,7 +731,7 @@ public class MainWindow : Window
                 ssh.RunCommand($"tar -czf {QuoteForShell(CombineRemote(parent, archiveName))} -C {QuoteForShell(parent)} {QuoteForShell(baseName)}");
             }
             ssh.Disconnect();
-            RefreshFiles();
+            RefreshFiles(tab);
         }
         catch (Exception ex)
         {
@@ -598,17 +739,17 @@ public class MainWindow : Window
         }
     }
 
-    private void ExtractSelected()
+    private void ExtractSelected(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        if (!TryGetSelectedRemotePath(out var remotePath, out _)) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        if (!TryGetSelectedRemotePath(tab, out var remotePath, out _)) return;
 
         var file = remotePath.ToLowerInvariant();
         var parent = ParentPath(remotePath);
 
         try
         {
-            using var ssh = CreateSshClient(_selected!);
+            using var ssh = CreateSshClient(tab.Session);
             ssh.Connect();
             if (file.EndsWith(".zip"))
             {
@@ -627,7 +768,7 @@ public class MainWindow : Window
                 Toast("Unsupported archive type.");
             }
             ssh.Disconnect();
-            RefreshFiles();
+            RefreshFiles(tab);
         }
         catch (Exception ex)
         {
@@ -648,10 +789,10 @@ public class MainWindow : Window
         return null;
     }
 
-    private void OpenWithLocal()
+    private void OpenWithLocal(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        if (!TryGetSelectedRemotePath(out var remotePath, out var isDir)) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        if (!TryGetSelectedRemotePath(tab, out var remotePath, out var isDir)) return;
         if (isDir)
         {
             Toast("Open With is for files only.");
@@ -663,7 +804,7 @@ public class MainWindow : Window
         {
             using (var fs = System.IO.File.Create(tempPath))
             {
-                _sftp!.DownloadFile(remotePath, fs);
+                tab.Sftp!.DownloadFile(remotePath, fs);
             }
 
             var contentType = GLib.ContentType.Guess(tempPath, null, out _);
@@ -689,9 +830,8 @@ public class MainWindow : Window
         }
     }
 
-    private void DownloadFolder(string remotePath)
+    private void DownloadFolder(TabState tab, string remotePath)
     {
-        if (_selected == null) return;
         using var d = new FileChooserDialog("Select Download Folder", this, FileChooserAction.SelectFolder,
             "Cancel", ResponseType.Cancel, "Choose", ResponseType.Accept);
 
@@ -707,19 +847,19 @@ public class MainWindow : Window
 
         try
         {
-            using var ssh = CreateSshClient(_selected);
+            using var ssh = CreateSshClient(tab.Session);
             ssh.Connect();
             ssh.RunCommand(tarCmd);
             ssh.Disconnect();
 
             using (var fs = System.IO.File.Create(localTar))
             {
-                _sftp!.DownloadFile(remoteTar, fs);
+                tab.Sftp!.DownloadFile(remoteTar, fs);
             }
 
             RunLocalCommand("tar", $"-xzf {QuoteForShell(localTar)} -C {QuoteForShell(targetDir)}");
 
-            using var sshCleanup = CreateSshClient(_selected);
+            using var sshCleanup = CreateSshClient(tab.Session);
             sshCleanup.Connect();
             sshCleanup.RunCommand($"rm -f {QuoteForShell(remoteTar)}");
             sshCleanup.Disconnect();
@@ -734,19 +874,19 @@ public class MainWindow : Window
         }
     }
 
-    private void UploadFile(string localPath)
+    private void UploadFile(TabState tab, string localPath)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        var remotePath = CombineRemote(_pathEntry.Text, System.IO.Path.GetFileName(localPath));
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        var remotePath = CombineRemote(tab.PathEntry.Text, System.IO.Path.GetFileName(localPath));
 
         using var fs = System.IO.File.OpenRead(localPath);
-        _sftp.UploadFile(fs, remotePath);
-        RefreshFiles();
+        tab.Sftp.UploadFile(fs, remotePath);
+        RefreshFiles(tab);
     }
 
-    private void UploadFolder(string localDir)
+    private void UploadFolder(TabState tab, string localDir)
     {
-        if (_sftp == null || !_sftp.IsConnected || _selected == null) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
         var folderName = System.IO.Path.GetFileName(localDir.TrimEnd(System.IO.Path.DirectorySeparatorChar));
         var localTar = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"{folderName}-{Guid.NewGuid():N}.tar.gz");
         var remoteTar = $"/tmp/lrecodex-upload-{Guid.NewGuid():N}.tar.gz";
@@ -758,16 +898,16 @@ public class MainWindow : Window
 
             using (var fs = System.IO.File.OpenRead(localTar))
             {
-                _sftp.UploadFile(fs, remoteTar);
+                tab.Sftp.UploadFile(fs, remoteTar);
             }
 
-            using var ssh = CreateSshClient(_selected);
+            using var ssh = CreateSshClient(tab.Session);
             ssh.Connect();
-            ssh.RunCommand($"tar -xzf {QuoteForShell(remoteTar)} -C {QuoteForShell(_pathEntry.Text)}");
+            ssh.RunCommand($"tar -xzf {QuoteForShell(remoteTar)} -C {QuoteForShell(tab.PathEntry.Text)}");
             ssh.RunCommand($"rm -f {QuoteForShell(remoteTar)}");
             ssh.Disconnect();
 
-            RefreshFiles();
+            RefreshFiles(tab);
         }
         catch (Exception ex)
         {
@@ -795,30 +935,30 @@ public class MainWindow : Window
         }
     }
 
-    private void OnFileActivated(RowActivatedArgs args)
+    private void OnFileActivated(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
-        if (!TryGetSelectedName(out var name, out var iter)) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
+        if (!TryGetSelectedName(tab, out var name, out var iter)) return;
         if (name == "..")
         {
-            _pathEntry.Text = ParentPath(_pathEntry.Text);
-            RefreshFiles();
+            tab.PathEntry.Text = ParentPath(tab.PathEntry.Text);
+            RefreshFiles(tab);
             return;
         }
 
-        var newPath = CombineRemote(_pathEntry.Text, name);
+        var newPath = CombineRemote(tab.PathEntry.Text, name);
 
         try
         {
-            var attrs = _sftp.GetAttributes(newPath);
+            var attrs = tab.Sftp.GetAttributes(newPath);
             if (attrs.IsDirectory)
             {
-                _pathEntry.Text = newPath;
-                RefreshFiles();
+                tab.PathEntry.Text = newPath;
+                RefreshFiles(tab);
             }
             else
             {
-                OpenFileInNano(newPath);
+                OpenFileInNano(tab, newPath);
             }
         }
         catch
@@ -827,53 +967,53 @@ public class MainWindow : Window
         }
     }
 
-    private void OnFilesButtonPress(object o, ButtonPressEventArgs args)
+    private void OnFilesButtonPress(TabState tab, object o, ButtonPressEventArgs args)
     {
         if (args.Event.Button != 3) return;
 
-        if (_filesView.GetPathAtPos((int)args.Event.X, (int)args.Event.Y, out var path, out _, out _, out _))
+        if (tab.FilesView.GetPathAtPos((int)args.Event.X, (int)args.Event.Y, out var path, out _, out _, out _))
         {
-            _filesView.Selection.SelectPath(path);
+            tab.FilesView.Selection.SelectPath(path);
         }
 
-        ShowFilesContextMenu();
+        ShowFilesContextMenu(tab);
     }
 
-    private void ShowFilesContextMenu()
+    private void ShowFilesContextMenu(TabState tab)
     {
-        if (_sftp == null || !_sftp.IsConnected) return;
+        if (tab.Sftp == null || !tab.Sftp.IsConnected) return;
 
         var menu = new Menu();
 
         var downloadItem = new MenuItem("Download");
-        downloadItem.Activated += (_, __) => DownloadSelected();
+        downloadItem.Activated += (_, __) => DownloadSelected(tab);
 
         var renameItem = new MenuItem("Rename...");
-        renameItem.Activated += (_, __) => RenameSelected();
+        renameItem.Activated += (_, __) => RenameSelected(tab);
 
         var deleteItem = new MenuItem("Delete");
-        deleteItem.Activated += (_, __) => DeleteSelected();
+        deleteItem.Activated += (_, __) => DeleteSelected(tab);
 
         var compressItem = new MenuItem("Compress...");
-        compressItem.Activated += (_, __) => CompressSelected();
+        compressItem.Activated += (_, __) => CompressSelected(tab);
 
         var extractItem = new MenuItem("Extract Here");
-        extractItem.Activated += (_, __) => ExtractSelected();
+        extractItem.Activated += (_, __) => ExtractSelected(tab);
 
         var uploadFileItem = new MenuItem("Upload File...");
-        uploadFileItem.Activated += (_, __) => UploadFileDialog();
+        uploadFileItem.Activated += (_, __) => UploadFileDialog(tab);
 
         var uploadFolderItem = new MenuItem("Upload Folder...");
-        uploadFolderItem.Activated += (_, __) => UploadFolderDialog();
+        uploadFolderItem.Activated += (_, __) => UploadFolderDialog(tab);
 
         var copyPathItem = new MenuItem("Copy Remote Path");
-        copyPathItem.Activated += (_, __) => CopyRemotePath();
+        copyPathItem.Activated += (_, __) => CopyRemotePath(tab);
 
         var openWithItem = new MenuItem("Open With (Local)...");
-        openWithItem.Activated += (_, __) => OpenWithLocal();
+        openWithItem.Activated += (_, __) => OpenWithLocal(tab);
 
         var pasteItem = new MenuItem("Paste (Upload)");
-        pasteItem.Activated += (_, __) => PasteUploadFromClipboard();
+        pasteItem.Activated += (_, __) => PasteUploadFromClipboard(tab);
 
         menu.Append(downloadItem);
         menu.Append(renameItem);
@@ -894,19 +1034,19 @@ public class MainWindow : Window
     }
 
     // ===== Embedded terminal (xterm -into <XID>) =====
-    private void ScheduleEmbeddedSshTerminal(SshSession s, int attempt)
+    private void ScheduleEmbeddedSshTerminal(TabState tab, int attempt)
     {
         GLib.Idle.Add(() =>
         {
             try
             {
-                StartEmbeddedSshTerminal(s);
+                StartEmbeddedSshTerminal(tab);
             }
             catch (Exception ex)
             {
                 if (ex.Message.Contains("Terminal socket not ready", StringComparison.OrdinalIgnoreCase) && attempt < 5)
                 {
-                    ScheduleEmbeddedSshTerminal(s, attempt + 1);
+                    ScheduleEmbeddedSshTerminal(tab, attempt + 1);
                     return false;
                 }
                 Toast("Terminal start failed: " + ex.Message);
@@ -915,22 +1055,23 @@ public class MainWindow : Window
         });
     }
 
-    private void StartEmbeddedSshTerminal(SshSession s)
+    private void StartEmbeddedSshTerminal(TabState tab)
     {
-        RecreateTerminalSocket();
+        tab.Container.ShowAll();
+        RecreateTerminalSocket(tab);
 
         if (!IsRealized)
         {
             ShowAll();
         }
 
-        if (!_termSocket.Visible)
+        if (!tab.TermSocket.Visible)
         {
-            _termSocket.Show();
+            tab.TermSocket.Show();
         }
 
         // Let GTK finish realize/map before grabbing the XID
-        for (var i = 0; i < 20 && !_termSocket.IsRealized; i++)
+        for (var i = 0; i < 20 && !tab.TermSocket.IsRealized; i++)
         {
             while (Application.EventsPending())
             {
@@ -938,9 +1079,10 @@ public class MainWindow : Window
             }
         }
 
-        var xid = _termSocket.Id;
+        var xid = tab.TermSocket.Id;
         if (xid == 0) throw new Exception("Terminal socket not ready.");
 
+        var s = tab.Session;
         var sshTarget = $"{s.Username}@{s.Host}";
         var portPart = s.Port != 22 ? $"-p {s.Port}" : "";
         var keyPart = !string.IsNullOrWhiteSpace(s.PrivateKeyPath) ? $"-i {QuoteForShell(s.PrivateKeyPath)}" : "";
@@ -957,20 +1099,22 @@ public class MainWindow : Window
             }
         }
 
-        var cmd = $"exec xterm -into {xid} -fa 'Monospace' -fs 11 -e {passPart}ssh {keyPart} {portPart} {sshTarget}";
-        _termProc = Process.Start(new ProcessStartInfo("/bin/bash", $"-lc \"{cmd}\"")
+        var xrm = "XTerm*selectToClipboard: true";
+        var xrm2 = "XTerm*VT100*translations: #override Ctrl Shift <Key>V: insert-selection(CLIPBOARD) \\n Ctrl Shift <Key>C: copy-selection(CLIPBOARD)";
+        var cmd = $"exec xterm -into {xid} -fa 'Monospace' -fs 11 -xrm {QuoteForShell(xrm)} -xrm {QuoteForShell(xrm2)} -e {passPart}ssh {keyPart} {portPart} {sshTarget}";
+        tab.TermProc = Process.Start(new ProcessStartInfo("/bin/bash", $"-lc \"{cmd}\"")
         {
             UseShellExecute = false
         });
 
-        if (_termProc != null)
+        if (tab.TermProc != null)
         {
-            _termProc.EnableRaisingEvents = true;
-            _termProc.Exited += (_, __) =>
+            tab.TermProc.EnableRaisingEvents = true;
+            tab.TermProc.Exited += (_, __) =>
             {
                 Application.Invoke((_, __) =>
                 {
-                    StopEmbeddedTerminal(recreateSocket: true);
+                    StopEmbeddedTerminal(tab, recreateSocket: true);
                     _disconnectBtn.Sensitive = false;
                     _refreshBtn.Sensitive = false;
                     _connectBtn.Sensitive = true;
@@ -981,34 +1125,33 @@ public class MainWindow : Window
         }
     }
 
-    private void StopEmbeddedTerminal(bool recreateSocket = false)
+    private void StopEmbeddedTerminal(TabState tab, bool recreateSocket = false)
     {
         try
         {
-            if (_termProc != null && !_termProc.HasExited)
+            if (tab.TermProc != null && !tab.TermProc.HasExited)
             {
-                _termProc.Kill();
-                _termProc.WaitForExit(2000);
+                tab.TermProc.Kill();
+                tab.TermProc.WaitForExit(2000);
             }
         }
         catch
         {
             // ignore
         }
-        _termProc = null;
+        tab.TermProc = null;
 
         if (recreateSocket)
         {
-            RecreateTerminalSocket();
+            RecreateTerminalSocket(tab);
         }
     }
 
-    private void OpenFileInNano(string remotePath)
+    private void OpenFileInNano(TabState tab, string remotePath)
     {
-        if (_selected == null) return;
-
-        var sshTarget = $"{_selected.Username}@{_selected.Host}";
-        var portPart = _selected.Port != 22 ? $"-p {_selected.Port}" : "";
+        var s = tab.Session;
+        var sshTarget = $"{s.Username}@{s.Host}";
+        var portPart = s.Port != 22 ? $"-p {s.Port}" : "";
         var pathArg = QuoteForShell(remotePath);
 
         // Launch a separate xterm running nano for the selected file
@@ -1026,17 +1169,21 @@ public class MainWindow : Window
         return socket;
     }
 
-    private void RecreateTerminalSocket()
+    private void RecreateTerminalSocket(TabState tab)
     {
-        if (_termSocket != null)
+        if (tab.TermSocket != null)
         {
-            _termFrame.Remove(_termSocket);
-            _termSocket.Destroy();
+            if (tab.TermSocket.Parent == tab.TermFrame)
+            {
+                tab.TermFrame.Remove(tab.TermSocket);
+            }
+            tab.TermSocket.Destroy();
         }
 
-        _termSocket = CreateTerminalSocket();
-        _termFrame.Add(_termSocket);
-        _termFrame.ShowAll();
+        tab.TermSocket = CreateTerminalSocket();
+        tab.TermFrame.Add(tab.TermSocket);
+        tab.TermFrame.ShowAll();
+        tab.Container.ShowAll();
     }
 
     // ===== SFTP Client =====
@@ -1354,6 +1501,37 @@ treeview header button:hover {
 label {
   color: #d7e2ff;
 }
+.notebook {
+  background: #0b0f14;
+}
+notebook > header.top {
+  background: #0f1520;
+  padding: 6px 6px 0 6px;
+}
+notebook > header.top tab {
+  background: #141b27;
+  border-radius: 8px 8px 0 0;
+  padding: 4px 10px;
+  border: 1px solid #263043;
+  margin-right: 6px;
+}
+notebook > header.top tab:checked,
+notebook > header.top tab:active {
+  background: #22314a;
+}
+.tab-text {
+  color: #e9efff;
+  font-weight: 600;
+}
+.tab-close {
+  background: transparent;
+  border-radius: 6px;
+  padding: 0 6px;
+  color: #e9efff;
+}
+.tab-close:hover {
+  background: #2a3f6b;
+}
 ";
 
         var provider = new CssProvider();
@@ -1420,7 +1598,10 @@ label {
 
     private void CleanupAndQuit()
     {
-        Disconnect();
+        foreach (var tab in _tabs.Values)
+        {
+            Disconnect(tab);
+        }
         Application.Quit();
     }
 }
